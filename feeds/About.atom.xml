@@ -7,8 +7,7 @@
 &lt;pre class="literal-block"&gt;
 pub   1024D/0930F6A9 2008-12-01 [expires: 2013-11-30]
   Key fingerprint = 93CE 27F9 3A12 57E5 923B  C10D 392F 3078 0930 F6A9
-uid                  Mark Schloesser &amp;lt;ms&amp;#64;mwcollect.org&amp;gt;
-uid                  Mark Schloesser &amp;lt;mark&amp;#64;etcho.de&amp;gt;
+uid                  Mark Schloesser &amp;lt;ms at mwcollect dot org&amp;gt;
 sub   4096g/EF8B2983 2008-12-01 [expires: 2013-11-30]
 &lt;/pre&gt;
 &lt;p&gt;Public Key:&lt;/p&gt;
