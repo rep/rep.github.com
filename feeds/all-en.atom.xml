@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="http://rep.github.com/" rel="alternate"></link><link href="http://rep.github.com/feeds/all-en.atom.xml" rel="self"></link><id>http://rep.github.com/</id><updated>2013-03-23T20:00:00+01:00</updated><entry><title>UCSB iCTF 2012/2013 - Airplane</title><link href="http://rep.github.com/ictf-2012-airplane-exploit.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:rep.github.com,2013-03-23:ictf-2012-airplane-exploit.html</id><summary type="html">&lt;p&gt;This write-up walks through the steps we took to finally end up with a working exploit for the &lt;a class="reference external" href="http://ictf.cs.ucsb.edu/"&gt;UCSB iCTF 2012&lt;/a&gt; (2013) &amp;quot;airplane&amp;quot; service.&lt;/p&gt;
-&lt;p&gt;The CTF was postponed from normally being run in early December to March 22nd.&lt;/p&gt;
+&lt;p&gt;The CTF was postponed from normally being run in early December to March 22nd. I participated again with the &lt;a class="reference external" href="http://ctf.itsec.rwth-aachen.de/"&gt;0ldEur0pe&lt;/a&gt; team - with base of operations in the UMIC Research Center in Aachen.&lt;/p&gt;
 &lt;div class="section" id="overview-the-airplane-service"&gt;
 &lt;h2&gt;Overview - the &lt;tt class="docutils literal"&gt;airplane&lt;/tt&gt; service&lt;/h2&gt;
 &lt;p&gt;The &lt;tt class="docutils literal"&gt;airplane&lt;/tt&gt; service is written in Python and uses a ASCII, line-based request-response protocol for communicating with clients. It represents a airplane flight management system with an added storage for key-value pairs - here flagid-flag pairs.&lt;/p&gt;
@@ -212,7 +212,7 @@ FLAG=FLGrK8C5stGDHv74
 &lt;p&gt;Basically this exploit took us relatively long to build because of struggling with the new iCTF exploit framework style (the exploit runs on their systems, not on ours) and also because we did try to analyze the setflag/getflag functionality that the gameserver uses before thinking about the vulnerability presented above.&lt;/p&gt;
 &lt;p&gt;In the end it was a nice service - not too straight-forward to exploit, but also not overly complicated. We struggled also a bit to get the CRC32 collision going - thankfully Andy Straub found &lt;a class="reference external" href="https://twitter.com/stalkr_"&gt;StalkR&lt;/a&gt;'s post in the end. That saved us a lot of time.&lt;/p&gt;
 &lt;p&gt;I was working on this service together with &lt;a class="reference external" href="https://twitter.com/G33KatWork"&gt;Andy&lt;/a&gt;. While getting frustrated along the way, in the end this was quite fun!&lt;/p&gt;
-&lt;p&gt;The team (0ldEur0pe) only managed to get top 20 in the end - but that seems to be our story for iCTFs in the last years :)&lt;/p&gt;
+&lt;p&gt;The team (&lt;a class="reference external" href="http://ctf.itsec.rwth-aachen.de/"&gt;0ldEur0pe&lt;/a&gt;) only managed to get top 20 in the end - but that seems to be our story for iCTFs in the last years :)&lt;/p&gt;
 &lt;blockquote&gt;
 -- mark&lt;/blockquote&gt;
 &lt;/div&gt;
