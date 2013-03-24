@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>rep's blog</title><link href="http://rep.github.com/" rel="alternate"></link><link href="http://rep.github.com/feeds/all-en.atom.xml" rel="self"></link><id>http://rep.github.com/</id><updated>2013-03-23T20:00:00+01:00</updated><entry><title>UCSB iCTF 2012/2013 - Airplane</title><link href="http://rep.github.com/ictf-2012-airplane-exploit.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:rep.github.com,2013-03-23:ictf-2012-airplane-exploit.html</id><summary type="html">&lt;p&gt;This write-up walks through the steps we took to finally end up with a working exploit for the UCSB iCTF 2012/2013 &amp;quot;airplane&amp;quot; service.&lt;/p&gt;
+<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="http://rep.github.com/" rel="alternate"></link><link href="http://rep.github.com/feeds/all-en.atom.xml" rel="self"></link><id>http://rep.github.com/</id><updated>2013-03-23T20:00:00+01:00</updated><entry><title>UCSB iCTF 2012/2013 - Airplane</title><link href="http://rep.github.com/ictf-2012-airplane-exploit.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:rep.github.com,2013-03-23:ictf-2012-airplane-exploit.html</id><summary type="html">&lt;p&gt;This write-up walks through the steps we took to finally end up with a working exploit for the UCSB iCTF 2012/2013 &amp;quot;airplane&amp;quot; service.&lt;/p&gt;
 &lt;p&gt;The CTF was postponed from normally being run in early December to March 22nd.&lt;/p&gt;
 &lt;div class="section" id="overview-the-airplane-service"&gt;
 &lt;h2&gt;Overview - the &lt;tt class="docutils literal"&gt;airplane&lt;/tt&gt; service&lt;/h2&gt;
@@ -68,7 +68,7 @@ RAND=?.M.'3..
 SIGN=1825f45d
 FLAG=FLGrK8C5stGDHv74
 &lt;/pre&gt;
-&lt;p&gt;Alright, so basically the service keeps track of airplanes together with their flight origin, destination and current position. Then there are authenticated (well...) requests and responses which are used to update flight positions.&lt;/p&gt;
+&lt;p&gt;Alright, so basically the service keeps track of airplanes together with their flight origin, destination and current position. For certain actions it uses authenticated (well...) requests and responses - for example to update flight positions.&lt;/p&gt;
 &lt;p&gt;Also it has a part of functionality that allows only the gameserver to store and retrieve flags which is not shown here.&lt;/p&gt;
 &lt;/div&gt;
 &lt;div class="section" id="diving-into-the-service-functionality"&gt;
