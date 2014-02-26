@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="/" rel="alternate"></link><link href="/feeds/about.atom.xml" rel="self"></link><id>/</id><updated>2013-03-23T00:00:00+01:00</updated><entry><title>About this site</title><link href="/about.html" rel="alternate"></link><updated>2013-03-23T00:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-03-23:about.html</id><summary type="html">&lt;p&gt;This site is maintainted by Mark &amp;quot;rep&amp;quot; Schloesser. You can find links to my Github / Twitter in the bottom.&lt;/p&gt;
+&lt;p&gt;You can also drop me an E-Mail according to the following information.&lt;/p&gt;
+&lt;div class="section" id="key-id-0x0930f6a9"&gt;
+&lt;h2&gt;Key ID 0x0930F6A9&lt;/h2&gt;
+&lt;p&gt;Key fingerprint:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+pub   1024D/0930F6A9 2008-12-01 [expires: 2013-11-30]
+  Key fingerprint = 93CE 27F9 3A12 57E5 923B  C10D 392F 3078 0930 F6A9
+uid                  Mark Schloesser &amp;lt;ms at mwcollect dot org&amp;gt;
+sub   4096g/EF8B2983 2008-12-01 [expires: 2013-11-30]
+&lt;/pre&gt;
+&lt;p&gt;Public Key:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v1.4.12 (GNU/Linux)
+
+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
+AJ0UHL8SQc04yZJltFSO2L/F1qO/Yg==
+=8nSE
+-----END PGP PUBLIC KEY BLOCK-----
+&lt;/pre&gt;
+&lt;/div&gt;
+</summary></entry></feed>

