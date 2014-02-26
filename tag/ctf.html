@@ -41,49 +41,35 @@
 <div class="section" id="reversing-automata">
 <h2>Reversing Automata</h2>
 <p>The binary is relatively simple, it uses the standard forking socket server template common in many CTF services. In the actual service logic, it sends the instructions to the client and receives the command and code. For both it uses one <tt class="docutils literal">recv(51)</tt> call and ends the buffer with a null-byte. Afterwards it calls <tt class="docutils literal">strtok(buf, &quot; <span class="pre">\t\r\n\&quot;'&quot;)</span></tt> on the resulting buffer, which overwrites the first delimiter with a null-byte, so that basically neither command nor code can have any whitespace in them.</p>
-<p>After receiving the inputs, a first verification stage occurs. For this, the command is checked with this function:</p>
-<div class="system-message">
-<p class="system-message-title">System Message: ERROR/3 (<tt class="docutils">/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst</tt>, line 26)</p>
-<p>Content block expected for the &quot;code-block&quot; directive; none found.</p>
-<pre class="literal-block">
-.. code-block:: c
-        check_command(const char *cmd, int *output) {
-          tmp = 0;
-          for ( i = strlen(cmd); i &gt; 0; --i )
-            tmp = 37 * (tmp + cmd[i - 1]);
-          output[1] = tmp % 0x11 + 1;
-          output[2] = (tmp &amp; 0xF) + 1;
-          output[0] = 43 - output[1] - output[2];
-        }
-
-</pre>
-</div>
+<p>After receiving the inputs, a first verification stage occurs. For this, the command is checked with the following function.</p>
+<div class="highlight"><pre>check_command(const char *cmd, int *output) {
+  tmp = 0;
+  for ( i = strlen(cmd); i &gt; 0; --i )
+    tmp = 37 * (tmp + cmd[i - 1]);
+  output[1] = tmp % 0x11 + 1;
+  output[2] = (tmp &amp; 0xF) + 1;
+  output[0] = 43 - output[1] - output[2];
+}
+</pre></div>
 <p>It basically calculates 3 numbers, which are important for the next part - the verification code needs to have an appropriate number of characters in it:</p>
-<div class="system-message">
-<p class="system-message-title">System Message: ERROR/3 (<tt class="docutils">/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst</tt>, line 38)</p>
-<p>Content block expected for the &quot;code-block&quot; directive; none found.</p>
-<pre class="literal-block">
-.. code-block:: c
-  count_3 = 0; count_2 = 0; count_1 = 0;
-  for ( i = 0; i &lt; strlen(code); ++i ) {
-    m = code[i] % 16;
-    if ( m == 2 )
-      ++count_2;
-    else {
-      if ( m == 3 )
-        ++count_3;
-      else {
-        if ( m != 1 )
-          wrong_code_do_exit(socketfd);
-        ++count_1;
-      }
-    }
-  }
-  if ( command_check[0] != count_1 || command_check[1] != count_2 || command_check[2] != count_3 )
-    wrong_code_do_exit(socketfd);
-
-</pre>
-</div>
+<div class="highlight"><pre><span class="n">count_3</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">count_2</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">count_1</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="k">for</span> <span class="p">(</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">strlen</span><span class="p">(</span><span class="n">code</span><span class="p">);</span> <span class="o">++</span><span class="n">i</span> <span class="p">)</span> <span class="p">{</span>
+  <span class="n">m</span> <span class="o">=</span> <span class="n">code</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">%</span> <span class="mi">16</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span> <span class="n">m</span> <span class="o">==</span> <span class="mi">2</span> <span class="p">)</span>
+    <span class="o">++</span><span class="n">count_2</span><span class="p">;</span>
+  <span class="k">else</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span> <span class="n">m</span> <span class="o">==</span> <span class="mi">3</span> <span class="p">)</span>
+      <span class="o">++</span><span class="n">count_3</span><span class="p">;</span>
+    <span class="k">else</span> <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span> <span class="n">m</span> <span class="o">!=</span> <span class="mi">1</span> <span class="p">)</span>
+        <span class="n">wrong_code_do_exit</span><span class="p">(</span><span class="n">socketfd</span><span class="p">);</span>
+      <span class="o">++</span><span class="n">count_1</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+<span class="k">if</span> <span class="p">(</span> <span class="n">command_check</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">count_1</span> <span class="o">||</span> <span class="n">command_check</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">count_2</span> <span class="o">||</span> <span class="n">command_check</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="n">count_3</span> <span class="p">)</span>
+  <span class="n">wrong_code_do_exit</span><span class="p">(</span><span class="n">socketfd</span><span class="p">);</span>
+</pre></div>
 <p>What this means is that the verification code needs to have an appropriate amount of <tt class="docutils literal">a, b, c</tt> characters in it for the previously computed numbers on the command.</p>
 </div>
 <div class="section" id="the-automaton">

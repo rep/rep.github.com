@@ -7,49 +7,35 @@
 &lt;div class="section" id="reversing-automata"&gt;
 &lt;h2&gt;Reversing Automata&lt;/h2&gt;
 &lt;p&gt;The binary is relatively simple, it uses the standard forking socket server template common in many CTF services. In the actual service logic, it sends the instructions to the client and receives the command and code. For both it uses one &lt;tt class="docutils literal"&gt;recv(51)&lt;/tt&gt; call and ends the buffer with a null-byte. Afterwards it calls &lt;tt class="docutils literal"&gt;strtok(buf, &amp;quot; &lt;span class="pre"&gt;\t\r\n\&amp;quot;'&amp;quot;)&lt;/span&gt;&lt;/tt&gt; on the resulting buffer, which overwrites the first delimiter with a null-byte, so that basically neither command nor code can have any whitespace in them.&lt;/p&gt;
-&lt;p&gt;After receiving the inputs, a first verification stage occurs. For this, the command is checked with this function:&lt;/p&gt;
-&lt;div class="system-message"&gt;
-&lt;p class="system-message-title"&gt;System Message: ERROR/3 (&lt;tt class="docutils"&gt;/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst&lt;/tt&gt;, line 26)&lt;/p&gt;
-&lt;p&gt;Content block expected for the &amp;quot;code-block&amp;quot; directive; none found.&lt;/p&gt;
-&lt;pre class="literal-block"&gt;
-.. code-block:: c
-        check_command(const char *cmd, int *output) {
-          tmp = 0;
-          for ( i = strlen(cmd); i &amp;gt; 0; --i )
-            tmp = 37 * (tmp + cmd[i - 1]);
-          output[1] = tmp % 0x11 + 1;
-          output[2] = (tmp &amp;amp; 0xF) + 1;
-          output[0] = 43 - output[1] - output[2];
-        }
-
-&lt;/pre&gt;
-&lt;/div&gt;
+&lt;p&gt;After receiving the inputs, a first verification stage occurs. For this, the command is checked with the following function.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;check_command(const char *cmd, int *output) {
+  tmp = 0;
+  for ( i = strlen(cmd); i &amp;gt; 0; --i )
+    tmp = 37 * (tmp + cmd[i - 1]);
+  output[1] = tmp % 0x11 + 1;
+  output[2] = (tmp &amp;amp; 0xF) + 1;
+  output[0] = 43 - output[1] - output[2];
+}
+&lt;/pre&gt;&lt;/div&gt;
 &lt;p&gt;It basically calculates 3 numbers, which are important for the next part - the verification code needs to have an appropriate number of characters in it:&lt;/p&gt;
-&lt;div class="system-message"&gt;
-&lt;p class="system-message-title"&gt;System Message: ERROR/3 (&lt;tt class="docutils"&gt;/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst&lt;/tt&gt;, line 38)&lt;/p&gt;
-&lt;p&gt;Content block expected for the &amp;quot;code-block&amp;quot; directive; none found.&lt;/p&gt;
-&lt;pre class="literal-block"&gt;
-.. code-block:: c
-  count_3 = 0; count_2 = 0; count_1 = 0;
-  for ( i = 0; i &amp;lt; strlen(code); ++i ) {
-    m = code[i] % 16;
-    if ( m == 2 )
-      ++count_2;
-    else {
-      if ( m == 3 )
-        ++count_3;
-      else {
-        if ( m != 1 )
-          wrong_code_do_exit(socketfd);
-        ++count_1;
-      }
-    }
-  }
-  if ( command_check[0] != count_1 || command_check[1] != count_2 || command_check[2] != count_3 )
-    wrong_code_do_exit(socketfd);
-
-&lt;/pre&gt;
-&lt;/div&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;count_3&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;count_2&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;count_1&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="n"&gt;strlen&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;code&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt; &lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="n"&gt;m&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;code&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="mi"&gt;16&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;m&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="n"&gt;count_2&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;m&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;3&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+      &lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="n"&gt;count_3&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;m&lt;/span&gt; &lt;span class="o"&gt;!=&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+        &lt;span class="n"&gt;wrong_code_do_exit&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;socketfd&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+      &lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="n"&gt;count_1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+  &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;command_check&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;!=&lt;/span&gt; &lt;span class="n"&gt;count_1&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="n"&gt;command_check&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;!=&lt;/span&gt; &lt;span class="n"&gt;count_2&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="n"&gt;command_check&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;!=&lt;/span&gt; &lt;span class="n"&gt;count_3&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+  &lt;span class="n"&gt;wrong_code_do_exit&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;socketfd&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
 &lt;p&gt;What this means is that the verification code needs to have an appropriate amount of &lt;tt class="docutils literal"&gt;a, b, c&lt;/tt&gt; characters in it for the previously computed numbers on the command.&lt;/p&gt;
 &lt;/div&gt;
 &lt;div class="section" id="the-automaton"&gt;
