@@ -86,6 +86,18 @@
 <p>After the initial verification stage, the more complicated part is reached. The binary creates subprocesses and pipes, sets up signal handling for signals 10 and 12 and then sits in a tight loop. The subprocesses and pipes represent the automaton - basically the processes are states and transitions occur by writing a number through the pipes.</p>
 <p>Automaton creates 8 subprocesses and 20 pipes.</p>
 <p>Each process reads from a few pipes (1-5) and writes to one of three output pipes. The automaton basically takes the code received earlier as input. The characters <tt class="docutils literal">a,b,c</tt> in the code make the automaton transition from state to state.</p>
+<p>The code executing in a subprocess looks like this:</p>
+<div class="highlight"><pre><span class="n">proc_1</span> <span class="o">=</span> <span class="n">fork</span><span class="p">();</span>
+<span class="k">if</span> <span class="p">(</span> <span class="o">!</span><span class="n">proc_1</span> <span class="p">)</span> <span class="p">{</span>
+  <span class="k">while</span> <span class="p">(</span> <span class="mi">1</span> <span class="p">)</span> <span class="p">{</span>
+    <span class="k">while</span> <span class="p">(</span> <span class="n">read</span><span class="p">(</span><span class="n">fd</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">progress_counter</span><span class="p">,</span> <span class="mi">4u</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="o">&amp;&amp;</span> <span class="n">read</span><span class="p">(</span><span class="n">fd</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">progress_counter</span><span class="p">,</span> <span class="mi">4u</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="p">)</span>
+      <span class="p">;</span>
+    <span class="n">send_progress_to_fd</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">progress_counter</span><span class="p">);</span>
+    <span class="c1">// make_transition_write_pipe(char * code, (int *) progress, fd1, fd2, fd3, signal_number)</span>
+    <span class="n">make_transition_write_pipe</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">progress_counter</span><span class="p">,</span> <span class="n">fd</span> <span class="o">+</span> <span class="mi">4</span><span class="p">,</span> <span class="n">fd</span> <span class="o">+</span> <span class="mi">4</span><span class="p">,</span> <span class="n">fd</span> <span class="o">+</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">);</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
 <p>It turns out that the parent will execute the command if it receives signal 10 and just says <tt class="docutils literal">Wrong code</tt> and exits on signal 12. The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.</p>
 <a class="reference external image-reference" href="pictures/automaton_drawing.jpg"><img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.jpg" style="width: 400px; height: 300px;" /></a>
 </div>
