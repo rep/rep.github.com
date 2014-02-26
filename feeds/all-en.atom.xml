@@ -1,5 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="/" rel="alternate"></link><link href="/feeds/all-en.atom.xml" rel="self"></link><id>/</id><updated>2013-06-17T08:00:00+02:00</updated><entry><title>DEFCON CTF Quals 2013 - shellcode 1</title><link href="/defcon-ctf-quals-2013-sc1.html" rel="alternate"></link><updated>2013-06-17T08:00:00+02:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-06-17:defcon-ctf-quals-2013-sc1.html</id><summary type="html">&lt;p&gt;It was DEFCON Quals time again - this time with a new organizer: &lt;a class="reference external" href="http://legitbs.net/"&gt;Legit Business Syndicate&lt;/a&gt;&lt;/p&gt;
+<feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="/" rel="alternate"></link><link href="/feeds/all-en.atom.xml" rel="self"></link><id>/</id><updated>2014-02-26T20:00:00+01:00</updated><entry><title>Codegate CTF 2014 Automata - RE 400</title><link href="/codegate-2014-automata-re400.html" rel="alternate"></link><updated>2014-02-26T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2014-02-26:codegate-2014-automata-re400.html</id><summary type="html">&lt;p&gt;Automata is a 32 bit Linux ELF binary and listens on a TCP port on the organizer network - one basically has to exploit it. However the binary just wants a command and a verification code as input - and if the code is correct for the given command, it will execute the command.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;[*] Enter your command: ls
+[*] Enter your code: code
+[!] Wrong code
+&lt;/pre&gt;&lt;/div&gt;
+&lt;div class="section" id="reversing-automata"&gt;
+&lt;h2&gt;Reversing Automata&lt;/h2&gt;
+&lt;p&gt;The binary is relatively simple, it uses the standard forking socket server template common in many CTF services. In the actual service logic, it sends the instructions to the client and receives the command and code. For both it uses one &lt;tt class="docutils literal"&gt;recv(51)&lt;/tt&gt; call and ends the buffer with a null-byte. Afterwards it calls &lt;tt class="docutils literal"&gt;strtok(buf, &amp;quot; &lt;span class="pre"&gt;\t\r\n\&amp;quot;'&amp;quot;)&lt;/span&gt;&lt;/tt&gt; on the resulting buffer, which overwrites the first delimiter with a null-byte, so that basically neither command nor code can have any whitespace in them.&lt;/p&gt;
+&lt;p&gt;After receiving the inputs, a first verification stage occurs. For this, the command is checked with this function:&lt;/p&gt;
+&lt;div class="system-message"&gt;
+&lt;p class="system-message-title"&gt;System Message: ERROR/3 (&lt;tt class="docutils"&gt;/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst&lt;/tt&gt;, line 26)&lt;/p&gt;
+&lt;p&gt;Content block expected for the &amp;quot;code-block&amp;quot; directive; none found.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+.. code-block:: c
+        check_command(const char *cmd, int *output) {
+          tmp = 0;
+          for ( i = strlen(cmd); i &amp;gt; 0; --i )
+            tmp = 37 * (tmp + cmd[i - 1]);
+          output[1] = tmp % 0x11 + 1;
+          output[2] = (tmp &amp;amp; 0xF) + 1;
+          output[0] = 43 - output[1] - output[2];
+        }
+
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;It basically calculates 3 numbers, which are important for the next part - the verification code needs to have an appropriate number of characters in it:&lt;/p&gt;
+&lt;div class="system-message"&gt;
+&lt;p class="system-message-title"&gt;System Message: ERROR/3 (&lt;tt class="docutils"&gt;/home/rep/code/rep.github.com/pelican-new/content/codegate-2014-automata-re400.rst&lt;/tt&gt;, line 38)&lt;/p&gt;
+&lt;p&gt;Content block expected for the &amp;quot;code-block&amp;quot; directive; none found.&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+.. code-block:: c
+  count_3 = 0; count_2 = 0; count_1 = 0;
+  for ( i = 0; i &amp;lt; strlen(code); ++i ) {
+    m = code[i] % 16;
+    if ( m == 2 )
+      ++count_2;
+    else {
+      if ( m == 3 )
+        ++count_3;
+      else {
+        if ( m != 1 )
+          wrong_code_do_exit(socketfd);
+        ++count_1;
+      }
+    }
+  }
+  if ( command_check[0] != count_1 || command_check[1] != count_2 || command_check[2] != count_3 )
+    wrong_code_do_exit(socketfd);
+
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;p&gt;What this means is that the verification code needs to have an appropriate amount of &lt;tt class="docutils literal"&gt;a, b, c&lt;/tt&gt; characters in it for the previously computed numbers on the command.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="the-automaton"&gt;
+&lt;h2&gt;The Automaton&lt;/h2&gt;
+&lt;p&gt;After the initial verification stage, the more complicated part is reached. The binary creates subprocesses and pipes, sets up signal handling for signals 10 and 12 and then sits in a tight loop. The subprocesses and pipes represent the automaton - basically the processes are states and transitions occur by writing a number through the pipes.&lt;/p&gt;
+&lt;p&gt;Automaton creates 8 subprocesses and 20 pipes.&lt;/p&gt;
+&lt;p&gt;Each process reads from a few pipes (1-5) and writes to one of three output pipes. The automaton basically takes the code received earlier as input. The characters &lt;tt class="docutils literal"&gt;a,b,c&lt;/tt&gt; in the code make the automaton transition from state to state.&lt;/p&gt;
+&lt;p&gt;It turns out that the parent will execute the command if it receives signal 10 and just says &lt;tt class="docutils literal"&gt;Wrong code&lt;/tt&gt; and exits on signal 12. The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.&lt;/p&gt;
+&lt;a class="reference external image-reference" href="pictures/automaton_drawing.png"&gt;&lt;img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="section" id="command-and-code"&gt;
+&lt;h2&gt;Command and Code&lt;/h2&gt;
+&lt;p&gt;Alright so we need to figure out a command that will get us the key and we can't have any whitespace in there. However as it is a forking socket-server, the socket fd will be the same number in every child - it is fd &lt;tt class="docutils literal"&gt;4&lt;/tt&gt;. So how about &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;cat&amp;lt;key&amp;gt;&amp;amp;4&lt;/span&gt;&lt;/tt&gt; - this will be executed by automata through the &lt;tt class="docutils literal"&gt;system()&lt;/tt&gt; library function - inherits the parent descriptors and thus gives us the key.&lt;/p&gt;
+&lt;p&gt;We determine the amount of &lt;tt class="docutils literal"&gt;a,b,c&lt;/tt&gt; characters needed for the first verification step: 39 As, 2 Bs and 2 Cs&lt;/p&gt;
+&lt;p&gt;Then we look at our drawing and figure out an order that stays away from state 8: &lt;tt class="docutils literal"&gt;cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab&lt;/tt&gt;&lt;/p&gt;
+&lt;p&gt;Fingers crossed and fire:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;[*] Enter your command: cat&amp;lt;key&amp;gt;&amp;amp;4
+[*] Enter your code: cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+[*] Verifying your code
+[!] Registered
+F4ILUrE_Is_N0T_an_O0PtI1On
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This challenge was pretty cool - the reversing was relatively simple, but the states and pipe numbers had to be kept track off in a very exact way. I swapped around two transitions on my sheet of paper and it took me an hour to figure that out :)&lt;/p&gt;
+&lt;p&gt;Anyway, good fun!&lt;/p&gt;
+&lt;blockquote&gt;
+-- mark&lt;/blockquote&gt;
+&lt;/div&gt;
+</summary><category term="ctf"></category><category term="reversing"></category><category term="codegate"></category></entry><entry><title>DEFCON CTF Quals 2013 - shellcode 1</title><link href="/defcon-ctf-quals-2013-sc1.html" rel="alternate"></link><updated>2013-06-17T08:00:00+02:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2013-06-17:defcon-ctf-quals-2013-sc1.html</id><summary type="html">&lt;p&gt;It was DEFCON Quals time again - this time with a new organizer: &lt;a class="reference external" href="http://legitbs.net/"&gt;Legit Business Syndicate&lt;/a&gt;&lt;/p&gt;
 &lt;p&gt;We solved quite a few challenges and collected 48 points - this sadly was not enough to bring us into the top of the scoreboard, though.&lt;/p&gt;
 &lt;p&gt;One of the first challenges I worked on was shellcode 1 aka &lt;tt class="docutils literal"&gt;incest&lt;/tt&gt;. This was a set of two 64 bit binaries that basically executed shellcode directly and read in the key file before - but with a twist. So here is the short write-up, even though it was not a very complicated challenge. We will save the more interesting write-ups for later :)&lt;/p&gt;
 &lt;div class="section" id="the-wrapper-maw"&gt;
@@ -273,7 +351,7 @@ FLAG=FLGrK8C5stGDHv74
     &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;flag&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;lines&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#39;=&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
 &lt;/pre&gt;&lt;/div&gt;
 &lt;p&gt;I put the complete exploit (careful, ugly mess of python code) to &lt;a class="reference external" href="https://gist.github.com/rep/5229723"&gt;a gist here&lt;/a&gt;. When we uploaded that and it actually worked - people were surprised and scared at the same time. We thought about rewriting it a bit before uploading - but I think it shows quite nicely under which pressure we all are coding during a CTF ;)&lt;/p&gt;
-&lt;img alt="pictures/airplane_exploit_works.jpg" src="pictures/airplane_exploit_works.jpg" /&gt;
+&lt;img alt="" src="pictures/airplane_exploit_works.jpg" /&gt;
 &lt;p&gt;Picture &lt;a class="reference external" href="http://www.flickr.com/photos/heipei/8582590139/"&gt;Source&lt;/a&gt;&lt;/p&gt;
 &lt;/div&gt;
 &lt;div class="section" id="aftermath"&gt;
