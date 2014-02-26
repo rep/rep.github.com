@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom"><title>rep.github.com</title><link href="/" rel="alternate"></link><link href="/feeds/blog.atom.xml" rel="self"></link><id>/</id><updated>2014-02-26T20:00:00+01:00</updated><entry><title>Codegate CTF 2014 Automata - RE 400</title><link href="/codegate-2014-automata-re400.html" rel="alternate"></link><updated>2014-02-26T20:00:00+01:00</updated><author><name>Mark "rep" Schloesser</name></author><id>tag:,2014-02-26:codegate-2014-automata-re400.html</id><summary type="html">&lt;p&gt;Automata is a 32 bit Linux ELF binary and listens on a TCP port on the organizer network - one basically has to exploit it. However the binary just wants a command and a verification code as input - and if the code is correct for the given command, it will execute the command.&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre&gt;[*] Enter your command: ls
+&lt;div class="highlight"&gt;&lt;pre&gt;58.229.183.18 8181 (intermapper) open
+[=] Welcome to Automata System [=]
+
+[*] Enter your command: ls
 [*] Enter your code: code
 [!] Wrong code
 &lt;/pre&gt;&lt;/div&gt;
@@ -8,14 +11,14 @@
 &lt;h2&gt;Reversing Automata&lt;/h2&gt;
 &lt;p&gt;The binary is relatively simple, it uses the standard forking socket server template common in many CTF services. In the actual service logic, it sends the instructions to the client and receives the command and code. For both it uses one &lt;tt class="docutils literal"&gt;recv(51)&lt;/tt&gt; call and ends the buffer with a null-byte. Afterwards it calls &lt;tt class="docutils literal"&gt;strtok(buf, &amp;quot; &lt;span class="pre"&gt;\t\r\n\&amp;quot;'&amp;quot;)&lt;/span&gt;&lt;/tt&gt; on the resulting buffer, which overwrites the first delimiter with a null-byte, so that basically neither command nor code can have any whitespace in them.&lt;/p&gt;
 &lt;p&gt;After receiving the inputs, a first verification stage occurs. For this, the command is checked with the following function.&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre&gt;check_command(const char *cmd, int *output) {
-  tmp = 0;
-  for ( i = strlen(cmd); i &amp;gt; 0; --i )
-    tmp = 37 * (tmp + cmd[i - 1]);
-  output[1] = tmp % 0x11 + 1;
-  output[2] = (tmp &amp;amp; 0xF) + 1;
-  output[0] = 43 - output[1] - output[2];
-}
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;check_command&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;const&lt;/span&gt; &lt;span class="kt"&gt;char&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="n"&gt;cmd&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="n"&gt;output&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="n"&gt;tmp&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;strlen&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;cmd&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;--&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="n"&gt;tmp&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;37&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;tmp&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="n"&gt;cmd&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]);&lt;/span&gt;
+  &lt;span class="n"&gt;output&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;tmp&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="mh"&gt;0x11&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="n"&gt;output&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;tmp&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&lt;/span&gt; &lt;span class="mh"&gt;0xF&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="n"&gt;output&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;43&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="n"&gt;output&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="n"&gt;output&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;];&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
 &lt;/pre&gt;&lt;/div&gt;
 &lt;p&gt;It basically calculates 3 numbers, which are important for the next part - the verification code needs to have an appropriate number of characters in it:&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;count_3&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;count_2&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;count_1&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
@@ -44,7 +47,7 @@
 &lt;p&gt;Automaton creates 8 subprocesses and 20 pipes.&lt;/p&gt;
 &lt;p&gt;Each process reads from a few pipes (1-5) and writes to one of three output pipes. The automaton basically takes the code received earlier as input. The characters &lt;tt class="docutils literal"&gt;a,b,c&lt;/tt&gt; in the code make the automaton transition from state to state.&lt;/p&gt;
 &lt;p&gt;It turns out that the parent will execute the command if it receives signal 10 and just says &lt;tt class="docutils literal"&gt;Wrong code&lt;/tt&gt; and exits on signal 12. The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.&lt;/p&gt;
-&lt;a class="reference external image-reference" href="pictures/automaton_drawing.png"&gt;&lt;img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.png" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
+&lt;a class="reference external image-reference" href="pictures/automaton_drawing.jpg"&gt;&lt;img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.jpg" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
 &lt;/div&gt;
 &lt;div class="section" id="command-and-code"&gt;
 &lt;h2&gt;Command and Code&lt;/h2&gt;
@@ -52,7 +55,10 @@
 &lt;p&gt;We determine the amount of &lt;tt class="docutils literal"&gt;a,b,c&lt;/tt&gt; characters needed for the first verification step: 39 As, 2 Bs and 2 Cs&lt;/p&gt;
 &lt;p&gt;Then we look at our drawing and figure out an order that stays away from state 8: &lt;tt class="docutils literal"&gt;cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab&lt;/tt&gt;&lt;/p&gt;
 &lt;p&gt;Fingers crossed and fire:&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre&gt;[*] Enter your command: cat&amp;lt;key&amp;gt;&amp;amp;4
+&lt;div class="highlight"&gt;&lt;pre&gt;58.229.183.18 8181 (intermapper) open
+[=] Welcome to Automata System [=]
+
+[*] Enter your command: cat&amp;lt;key&amp;gt;&amp;amp;4
 [*] Enter your code: cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
 [*] Verifying your code
 [!] Registered

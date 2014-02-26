@@ -34,7 +34,10 @@
 <p>In <a href="/category/blog.html">Blog</a>. </p>
 <p>tags: <a href="/tag/ctf.html">ctf</a> <a href="/tag/reversing.html">reversing</a> <a href="/tag/codegate.html">codegate</a> </p>
 </footer><!-- /.post-info --><p>Automata is a 32 bit Linux ELF binary and listens on a TCP port on the organizer network - one basically has to exploit it. However the binary just wants a command and a verification code as input - and if the code is correct for the given command, it will execute the command.</p>
-<div class="highlight"><pre>[*] Enter your command: ls
+<div class="highlight"><pre>58.229.183.18 8181 (intermapper) open
+[=] Welcome to Automata System [=]
+
+[*] Enter your command: ls
 [*] Enter your code: code
 [!] Wrong code
 </pre></div>
@@ -42,14 +45,14 @@
 <h2>Reversing Automata</h2>
 <p>The binary is relatively simple, it uses the standard forking socket server template common in many CTF services. In the actual service logic, it sends the instructions to the client and receives the command and code. For both it uses one <tt class="docutils literal">recv(51)</tt> call and ends the buffer with a null-byte. Afterwards it calls <tt class="docutils literal">strtok(buf, &quot; <span class="pre">\t\r\n\&quot;'&quot;)</span></tt> on the resulting buffer, which overwrites the first delimiter with a null-byte, so that basically neither command nor code can have any whitespace in them.</p>
 <p>After receiving the inputs, a first verification stage occurs. For this, the command is checked with the following function.</p>
-<div class="highlight"><pre>check_command(const char *cmd, int *output) {
-  tmp = 0;
-  for ( i = strlen(cmd); i &gt; 0; --i )
-    tmp = 37 * (tmp + cmd[i - 1]);
-  output[1] = tmp % 0x11 + 1;
-  output[2] = (tmp &amp; 0xF) + 1;
-  output[0] = 43 - output[1] - output[2];
-}
+<div class="highlight"><pre><span class="n">check_command</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">cmd</span><span class="p">,</span> <span class="kt">int</span> <span class="o">*</span><span class="n">output</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">tmp</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="k">for</span> <span class="p">(</span> <span class="n">i</span> <span class="o">=</span> <span class="n">strlen</span><span class="p">(</span><span class="n">cmd</span><span class="p">);</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">;</span> <span class="o">--</span><span class="n">i</span> <span class="p">)</span>
+    <span class="n">tmp</span> <span class="o">=</span> <span class="mi">37</span> <span class="o">*</span> <span class="p">(</span><span class="n">tmp</span> <span class="o">+</span> <span class="n">cmd</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]);</span>
+  <span class="n">output</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">tmp</span> <span class="o">%</span> <span class="mh">0x11</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="n">output</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">tmp</span> <span class="o">&amp;</span> <span class="mh">0xF</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="n">output</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">43</span> <span class="o">-</span> <span class="n">output</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">output</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+<span class="p">}</span>
 </pre></div>
 <p>It basically calculates 3 numbers, which are important for the next part - the verification code needs to have an appropriate number of characters in it:</p>
 <div class="highlight"><pre><span class="n">count_3</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">count_2</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">count_1</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
@@ -78,7 +81,7 @@
 <p>Automaton creates 8 subprocesses and 20 pipes.</p>
 <p>Each process reads from a few pipes (1-5) and writes to one of three output pipes. The automaton basically takes the code received earlier as input. The characters <tt class="docutils literal">a,b,c</tt> in the code make the automaton transition from state to state.</p>
 <p>It turns out that the parent will execute the command if it receives signal 10 and just says <tt class="docutils literal">Wrong code</tt> and exits on signal 12. The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.</p>
-<a class="reference external image-reference" href="pictures/automaton_drawing.png"><img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.png" style="width: 400px; height: 300px;" /></a>
+<a class="reference external image-reference" href="pictures/automaton_drawing.jpg"><img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.jpg" style="width: 400px; height: 300px;" /></a>
 </div>
 <div class="section" id="command-and-code">
 <h2>Command and Code</h2>
@@ -86,7 +89,10 @@
 <p>We determine the amount of <tt class="docutils literal">a,b,c</tt> characters needed for the first verification step: 39 As, 2 Bs and 2 Cs</p>
 <p>Then we look at our drawing and figure out an order that stays away from state 8: <tt class="docutils literal">cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab</tt></p>
 <p>Fingers crossed and fire:</p>
-<div class="highlight"><pre>[*] Enter your command: cat&lt;key&gt;&amp;4
+<div class="highlight"><pre>58.229.183.18 8181 (intermapper) open
+[=] Welcome to Automata System [=]
+
+[*] Enter your command: cat&lt;key&gt;&amp;4
 [*] Enter your code: cabcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
 [*] Verifying your code
 [!] Registered
