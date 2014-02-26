@@ -58,7 +58,19 @@
   &lt;span class="p"&gt;}&lt;/span&gt;
 &lt;span class="p"&gt;}&lt;/span&gt;
 &lt;/pre&gt;&lt;/div&gt;
-&lt;p&gt;It turns out that the parent will execute the command if it receives signal 10 and just says &lt;tt class="docutils literal"&gt;Wrong code&lt;/tt&gt; and exits on signal 12. The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.&lt;/p&gt;
+&lt;p&gt;It turns out that the parent will execute the command if it receives signal 10 and just says &lt;tt class="docutils literal"&gt;Wrong code&lt;/tt&gt; and exits on signal 12.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="n"&gt;parent_signal_handler&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;signum&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;signum&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;10&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="n"&gt;kill_child_procs&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+    &lt;span class="n"&gt;success_system_exec&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;sockfd&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+  &lt;span class="p"&gt;}&lt;/span&gt;
+  &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="n"&gt;signum&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;12&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="n"&gt;kill_child_procs&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+    &lt;span class="n"&gt;wrong_code_do_exit&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;sockfd&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+  &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The signal is sent by either of the child processes when the character at position 43 in the code is processed. All subprocesses use signal 10, except for the last process (number 8). So that last process #8 represents the end-state and we need to make sure that we do not enter that state with our input because it turns out that state 8 will only transition to itself.&lt;/p&gt;
 &lt;a class="reference external image-reference" href="pictures/automaton_drawing.jpg"&gt;&lt;img alt="automaton drawing" class="align-center" src="pictures/automaton_drawing.jpg" style="width: 400px; height: 300px;" /&gt;&lt;/a&gt;
 &lt;/div&gt;
 &lt;div class="section" id="command-and-code"&gt;
@@ -76,7 +88,7 @@
 [!] Registered
 F4ILUrE_Is_N0T_an_O0PtI1On
 &lt;/pre&gt;&lt;/div&gt;
-&lt;p&gt;This challenge was pretty cool - the reversing was relatively simple, but the states and pipe numbers had to be kept track off in a very exact way. I swapped around two transitions on my sheet of paper and it took me an hour to figure that out :)&lt;/p&gt;
+&lt;p&gt;This challenge was pretty cool - the reversing was relatively simple, but the states and pipe numbers had to be kept track off in a very exact way. I misplaced around two transitions on my paper drawing and it took me an hour to figure that out :)&lt;/p&gt;
 &lt;p&gt;Anyway, good fun!&lt;/p&gt;
 &lt;blockquote&gt;
 -- mark&lt;/blockquote&gt;
